@@ -93,6 +93,35 @@ def test_every_claim_status_is_parsed(status):
     assert result.status is status
 
 
+def test_verifier_accepts_plain_json_response():
+    response = _model_response("supported")
+    verification = ClaimVerifier(
+        FakeBifrost([response]),
+        FakeTavily([_result()]),
+    ).verify(_claim())
+
+    assert verification.status is ClaimStatus.SUPPORTED
+    assert verification.confidence == 0.9
+
+
+def test_verifier_accepts_valid_json_fenced_response():
+    response = f"```json\n{_model_response('supported')}\n```"
+    verification = ClaimVerifier(
+        FakeBifrost([response]),
+        FakeTavily([_result()]),
+    ).verify(_claim())
+
+    assert verification.status is ClaimStatus.SUPPORTED
+    assert verification.rationale == "The retrieved source supports the claim."
+
+
+def test_verifier_rejects_invalid_json_inside_fence():
+    response = "```json\n{not valid JSON}\n```"
+
+    with pytest.raises(ValueError, match="valid JSON"):
+        ClaimVerifier(FakeBifrost([response]), FakeTavily([_result()])).verify(_claim())
+
+
 @pytest.mark.parametrize(
     "response",
     ["not-json", "[]", _model_response(status="unknown"),

@@ -150,7 +150,7 @@ def _parse_verification_response(
     if not isinstance(response_text, str) or not response_text.strip():
         raise ValueError("Gemini verification response must be a JSON object.")
     try:
-        data = json.loads(response_text)
+        data = json.loads(_clean_json_text(response_text))
     except (ValueError, TypeError):
         raise ValueError("Gemini verification response must be valid JSON.") from None
     if not isinstance(data, dict):
