@@ -9,4 +9,9 @@ __pycache__/
 .coverage
 
 .streamlit/secrets.toml
+
+# Local single-user verification history
+/.freshlens_history.sqlite3
+/.freshlens_history.sqlite3-shm
+/.freshlens_history.sqlite3-wal
 .vscode/
