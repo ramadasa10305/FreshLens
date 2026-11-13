@@ -3,42 +3,58 @@
 ## System diagram
 
 ```mermaid
-flowchart LR
-    User[User submits an AI answer] --> UI[Streamlit UI: app.py]
-    UI -->|FreshnessPipeline.analyze(answer)| Pipeline[FreshnessPipeline]
+flowchart TD
+    A["User supplied answer"]
+    B["Streamlit UI"]
+    C["FreshnessPipeline.analyze(answer)"]
+    D["ClaimExtractor and time-sensitivity analysis"]
+    E["ClaimVerifier"]
+    F["Tavily client"]
+    G["Tavily Search API"]
+    H["Bifrost inference client"]
+    I["Bifrost inference gateway"]
+    J["Gemini model"]
+    K["Freshness scoring"]
+    L["Structured FreshnessReport"]
+    M["HistoryStore"]
+    N[("Local SQLite verification history")]
+    O["External MCP client"]
+    P["Bifrost MCP Gateway"]
+    Q["FreshLens MCP server"]
 
-    MCPHost[MCP host] -->|STDIO| MCPServer[mcp_server.py]
-    MCPServer -->|verify_answer_freshness(answer)| Pipeline
-    MCPServer -->|structured FreshnessReport over STDIO| MCPHost
+    A --> B
+    B --> C
+    C --> D
+    D --> H
+    H --> I
+    I --> J
+    J --> I
+    I --> H
+    H --> D
+    D --> C
+    C --> E
+    E --> F
+    F --> G
+    G --> F
+    F --> E
+    E --> H
+    H --> E
+    E --> C
+    C --> K
+    K --> C
+    C --> L
+    L --> B
+    B --> M
+    M --> N
+    N --> M
+    M --> B
 
-    Pipeline --> Extractor[ClaimExtractor]
-    Extractor -->|JSON-encoded answer prompt| BifrostClient[BifrostClient]
-    BifrostClient -->|chat completions| Bifrost[Bifrost inference gateway]
-    Bifrost --> Gemini[Configured Gemini model]
-    Gemini --> BifrostClient
-    BifrostClient --> Extractor
-
-    Pipeline --> Verifier[ClaimVerifier]
-    Verifier -->|one claim per search, up to five results| TavilyClient[TavilyClient]
-    TavilyClient -->|search request| Tavily[Tavily Search API]
-    Tavily --> TavilyClient
-    TavilyClient --> Verifier
-    Verifier -->|claim and retrieved evidence| BifrostClient
-    BifrostClient --> Verifier
-
-    Extractor -->|atomic claims| Pipeline
-    Verifier -->|ClaimVerification records| Pipeline
-    Pipeline --> Scoring[score_freshness]
-    Scoring -->|scored verifications and summary| Pipeline
-    Pipeline -->|FreshnessReport| UI
-    Pipeline -->|FreshnessReport| MCPServer
-
-    UI -->|successful report only| HistoryStore[HistoryStore]
-    UI --> HistoryUI[History section: open or delete]
-    HistoryUI --> HistoryStore
-    HistoryStore -->|SQLite records| HistoryDB[(.freshlens_history.sqlite3)]
-    HistoryDB -->|deserialize saved report| HistoryStore
-    HistoryStore -->|previous FreshnessReport, no verification call| UI
+    O --> P
+    P --> Q
+    Q --> C
+    L --> Q
+    Q --> P
+    P --> O
 ```
 
 ## Component responsibilities
