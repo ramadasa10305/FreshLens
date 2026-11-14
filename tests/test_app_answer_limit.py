@@ -78,6 +78,15 @@ def _install_fake_pipeline(monkeypatch: pytest.MonkeyPatch, pipeline_type: type)
     monkeypatch.setitem(sys.modules, "pipeline", module)
 
 
+def _click_verify_freshness(app: AppTest) -> None:
+    button = next(
+        (item for item in app.button if item.label == "Verify freshness"),
+        None,
+    )
+    assert button is not None
+    button.click().run()
+
+
 @pytest.mark.parametrize(
     ("answer", "expected_error"),
     [
@@ -104,7 +113,7 @@ def test_submit_rejects_empty_or_oversized_answer_without_calling_pipeline(
 
     answer_widget = app.text_area(key="answer_input")
     answer_widget.set_value(answer)
-    app.button[0].click().run()
+    _click_verify_freshness(app)
 
     assert not app.exception
     assert app.text_area(key="answer_input").value == answer
@@ -129,13 +138,79 @@ def test_manual_submit_calls_pipeline_and_saves_successful_report(
     app = AppTest.from_file(_app_path()).run()
     answer = "A normal answer with one factual claim."
     app.text_area(key="answer_input").set_value(answer)
-    app.button[0].click().run()
+    _click_verify_freshness(app)
 
     assert not app.exception
     assert calls == [answer]
     assert len(store.saved_reports) == 1
     assert store.saved_reports[0].original_answer == answer
     assert app.session_state["freshness_report"].original_answer == answer
+
+
+@pytest.mark.parametrize(
+    ("button_key", "expected_answer"),
+    [
+        ("example_microsoft_leadership", "Microsoft's CEO is Satya Nadella."),
+        (
+            "example_python_version",
+            "Python 3.12 is the latest stable feature release series.",
+        ),
+    ],
+)
+def test_example_buttons_only_populate_answer_and_clear_error(
+    monkeypatch: pytest.MonkeyPatch,
+    button_key: str,
+    expected_answer: str,
+) -> None:
+    pipeline_constructions: list[object] = []
+
+    class ForbiddenPipeline:
+        def __init__(self) -> None:
+            pipeline_constructions.append(self)
+
+    store = _FakeHistoryStore()
+    monkeypatch.setattr(history_store, "HistoryStore", lambda: store)
+    _install_fake_pipeline(monkeypatch, ForbiddenPipeline)
+    app = AppTest.from_file(_app_path()).run()
+    app.session_state["freshness_error"] = "Previous validation error"
+
+    app.button(key=button_key).click().run()
+
+    assert not app.exception
+    assert app.session_state["answer_input"] == expected_answer
+    assert app.text_area(key="answer_input").value == expected_answer
+    assert app.session_state["freshness_error"] is None
+    assert app.session_state["freshness_report"] is None
+    assert pipeline_constructions == []
+    assert store.saved_reports == []
+
+
+def test_example_answer_remains_editable_and_requires_manual_submission(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = _FakeHistoryStore()
+    calls: list[str] = []
+    monkeypatch.setattr(history_store, "HistoryStore", lambda: store)
+
+    class FakePipeline:
+        def analyze(self, answer: str) -> FreshnessReport:
+            calls.append(answer)
+            return _report(answer)
+
+    _install_fake_pipeline(monkeypatch, FakePipeline)
+    app = AppTest.from_file(_app_path()).run()
+    app.button(key="example_microsoft_leadership").click().run()
+
+    assert calls == []
+    assert app.session_state["answer_input"] == "Microsoft's CEO is Satya Nadella."
+
+    edited_answer = "Microsoft's CEO is Satya Nadella. Edited by the user."
+    app.text_area(key="answer_input").set_value(edited_answer)
+    _click_verify_freshness(app)
+
+    assert not app.exception
+    assert calls == [edited_answer]
+    assert len(store.saved_reports) == 1
 
 
 def test_history_reopening_and_individual_deletion_use_saved_record(

@@ -45,6 +45,7 @@ _APP_STYLES = """
     }
 
     .stApp {
+        isolation: isolate;
         --background-color: #0b1220;
         --secondary-background-color: #111c2e;
         --text-color: #f8fafc;
@@ -54,6 +55,21 @@ _APP_STYLES = """
             radial-gradient(ellipse at 50% -24%, rgba(45, 212, 191, .12), transparent 52%),
             linear-gradient(180deg, #101b2d 0%, var(--fl-bg) 44rem);
         color: var(--fl-text) !important;
+    }
+    #freshlens-particle-field {
+        position: fixed;
+        inset: 0;
+        z-index: -1;
+        pointer-events: none;
+        overflow: hidden;
+    }
+    #freshlens-particle-field .freshlens-particle-dot {
+        position: absolute;
+        width: 2px;
+        height: 2px;
+        border-radius: 50%;
+        background: rgba(45, 212, 191, .42);
+        transform: translate3d(0, 0, 0);
     }
     [data-testid="stMain"] { background: transparent; color: var(--fl-text) !important; }
     [data-testid="stHeader"] { background: rgba(11, 18, 32, .92); }
@@ -291,6 +307,223 @@ _APP_STYLES = """
     }
 </style>
 """
+
+
+_PARTICLE_FIELD_HTML = """
+<script>
+(() => {
+    const initKey = "__freshlensParticleFieldInitialized";
+    const fieldId = "freshlens-particle-field";
+    const appRoot = document.querySelector(".stApp");
+    if (!appRoot) return;
+
+    const existingState = window[initKey];
+    if (existingState) {
+        if (existingState.field.parentElement !== appRoot) {
+            appRoot.appendChild(existingState.field);
+        }
+        return;
+    }
+
+    let field = document.getElementById(fieldId);
+    if (!field) field = document.createElement("div");
+    field.id = fieldId;
+    field.setAttribute("aria-hidden", "true");
+    if (field.parentElement !== appRoot) appRoot.appendChild(field);
+
+    const dots = [];
+    const activeDots = new Set();
+    const movingDots = new Set();
+    const motionPreference = window.matchMedia
+        ? window.matchMedia("(prefers-reduced-motion: reduce)")
+        : null;
+    const reducedMotion = Boolean(motionPreference && motionPreference.matches);
+    const influenceRadius = 120;
+    const maxDisplacement = 11;
+    let gridSpacing = 36;
+    let columnCount = 0;
+    let rowCount = 0;
+    let animationFrame = 0;
+    let resizeTimer = 0;
+
+    function buildGrid() {
+        if (animationFrame) {
+            cancelAnimationFrame(animationFrame);
+            animationFrame = 0;
+        }
+        activeDots.clear();
+        movingDots.clear();
+        dots.length = 0;
+        field.replaceChildren();
+
+        const width = Math.max(1, window.innerWidth);
+        const height = Math.max(1, window.innerHeight);
+        gridSpacing = Math.max(32, Math.sqrt((width * height) / 1300));
+        columnCount = Math.ceil(width / gridSpacing) + 1;
+        rowCount = Math.ceil(height / gridSpacing) + 1;
+        while (columnCount * rowCount > 1500) {
+            gridSpacing += 1;
+            columnCount = Math.ceil(width / gridSpacing) + 1;
+            rowCount = Math.ceil(height / gridSpacing) + 1;
+        }
+
+        const fragment = document.createDocumentFragment();
+        for (let row = 0; row < rowCount; row += 1) {
+            for (let column = 0; column < columnCount; column += 1) {
+                const element = document.createElement("span");
+                element.className = "freshlens-particle-dot";
+                const restX = column * gridSpacing;
+                const restY = row * gridSpacing;
+                element.style.left = String(restX) + "px";
+                element.style.top = String(restY) + "px";
+                fragment.appendChild(element);
+                dots.push({
+                    element: element,
+                    restX: restX,
+                    restY: restY,
+                    x: 0,
+                    y: 0,
+                    targetX: 0,
+                    targetY: 0
+                });
+            }
+        }
+        field.appendChild(fragment);
+    }
+
+    function requestAnimation() {
+        if (!reducedMotion && !animationFrame && movingDots.size > 0) {
+            animationFrame = requestAnimationFrame(animateDots);
+        }
+    }
+
+    function setTarget(dot, x, y) {
+        if (Math.abs(dot.targetX - x) > 0.03 || Math.abs(dot.targetY - y) > 0.03) {
+            dot.targetX = x;
+            dot.targetY = y;
+            movingDots.add(dot);
+        }
+    }
+
+    function animateDots() {
+        animationFrame = 0;
+        const settled = [];
+        for (const dot of movingDots) {
+            const deltaX = dot.targetX - dot.x;
+            const deltaY = dot.targetY - dot.y;
+            dot.x += deltaX * 0.22;
+            dot.y += deltaY * 0.22;
+            if (Math.abs(deltaX) < 0.12 && Math.abs(deltaY) < 0.12) {
+                dot.x = dot.targetX;
+                dot.y = dot.targetY;
+                settled.push(dot);
+            }
+            dot.element.style.transform =
+                "translate3d(" + String(dot.x) + "px, " + String(dot.y) + "px, 0)";
+        }
+        for (const dot of settled) movingDots.delete(dot);
+        requestAnimation();
+    }
+
+    function moveNearbyDots(x, y) {
+        const nextActive = new Set();
+        const minColumn = Math.max(0, Math.floor((x - influenceRadius) / gridSpacing));
+        const maxColumn = Math.min(
+            columnCount - 1,
+            Math.ceil((x + influenceRadius) / gridSpacing)
+        );
+        const minRow = Math.max(0, Math.floor((y - influenceRadius) / gridSpacing));
+        const maxRow = Math.min(
+            rowCount - 1,
+            Math.ceil((y + influenceRadius) / gridSpacing)
+        );
+
+        for (let row = minRow; row <= maxRow; row += 1) {
+            for (let column = minColumn; column <= maxColumn; column += 1) {
+                const dot = dots[row * columnCount + column];
+                const offsetX = dot.restX - x;
+                const offsetY = dot.restY - y;
+                const distance = Math.sqrt(offsetX * offsetX + offsetY * offsetY);
+                if (distance >= influenceRadius) continue;
+
+                let directionX = offsetX;
+                let directionY = offsetY;
+                let directionLength = distance;
+                if (directionLength < 0.001) {
+                    directionX = 1;
+                    directionY = 0;
+                    directionLength = 1;
+                }
+                const falloff = 1 - distance / influenceRadius;
+                const displacement = maxDisplacement * falloff * falloff;
+                setTarget(
+                    dot,
+                    (directionX / directionLength) * displacement,
+                    (directionY / directionLength) * displacement
+                );
+                nextActive.add(dot);
+            }
+        }
+
+        for (const dot of activeDots) {
+            if (!nextActive.has(dot)) setTarget(dot, 0, 0);
+        }
+        activeDots.clear();
+        for (const dot of nextActive) activeDots.add(dot);
+        requestAnimation();
+    }
+
+    function returnDotsToRest() {
+        for (const dot of activeDots) setTarget(dot, 0, 0);
+        activeDots.clear();
+        requestAnimation();
+    }
+
+    function handlePointerMove(event) {
+        if (event.pointerType === "touch") return;
+        moveNearbyDots(event.clientX, event.clientY);
+    }
+
+    function handleTouchMove(event) {
+        if (event.touches.length > 0) {
+            moveNearbyDots(event.touches[0].clientX, event.touches[0].clientY);
+        }
+    }
+
+    function handleTouchEnd(event) {
+        if (event.touches.length > 0) {
+            moveNearbyDots(event.touches[0].clientX, event.touches[0].clientY);
+        } else {
+            returnDotsToRest();
+        }
+    }
+
+    function handleResize() {
+        window.clearTimeout(resizeTimer);
+        resizeTimer = window.setTimeout(buildGrid, 140);
+    }
+
+    buildGrid();
+    window[initKey] = { field: field };
+    window.addEventListener("resize", handleResize, { passive: true });
+
+    if (reducedMotion) return;
+    window.addEventListener("pointermove", handlePointerMove, { passive: true });
+    window.addEventListener("pointerleave", returnDotsToRest, { passive: true });
+    window.addEventListener("touchstart", handleTouchMove, { passive: true });
+    window.addEventListener("touchmove", handleTouchMove, { passive: true });
+    window.addEventListener("touchend", handleTouchEnd, { passive: true });
+    window.addEventListener("touchcancel", returnDotsToRest, { passive: true });
+    window.addEventListener("blur", returnDotsToRest, { passive: true });
+})();
+</script>
+"""
+
+
+def _set_example_answer(answer: str) -> None:
+    """Populate the existing answer widget and clear its current validation error."""
+    st.session_state["answer_input"] = answer
+    st.session_state["freshness_error"] = None
 
 
 def _safe_source_url(value: object) -> str | None:
@@ -686,6 +919,25 @@ st.markdown('<div class="freshlens-section-label">Start a freshness check</div>'
 st.subheader("Review an answer")
 st.caption("Paste a response from an AI assistant. FreshLens will extract and check its factual claims individually.")
 
+st.markdown("**Try an example**")
+example_columns = st.columns(2, gap="small")
+with example_columns[0]:
+    st.button(
+        "Microsoft leadership example",
+        key="example_microsoft_leadership",
+        on_click=_set_example_answer,
+        args=("Microsoft's CEO is Satya Nadella.",),
+        width="stretch",
+    )
+with example_columns[1]:
+    st.button(
+        "Python version example",
+        key="example_python_version",
+        on_click=_set_example_answer,
+        args=("Python 3.12 is the latest stable feature release series.",),
+        width="stretch",
+    )
+
 with st.form("freshness_check_form", border=True, enter_to_submit=False):
     answer = st.text_area(
         "Paste an AI-generated answer",
@@ -752,3 +1004,4 @@ if st.session_state["freshness_report"] is not None:
     _render_report(st.session_state["freshness_report"])
 
 _render_history(history_store)
+st.html(_PARTICLE_FIELD_HTML, width=1, unsafe_allow_javascript=True)
