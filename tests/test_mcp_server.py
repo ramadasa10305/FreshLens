@@ -149,6 +149,16 @@ def test_tool_invocation_returns_complete_structured_report_and_forwards_answer(
     assert result.structured_content["summary"]["total_claims"] == 2
 
 
+def test_oversized_answer_is_rejected_before_pipeline_invocation():
+    pipeline = FakePipeline()
+    server = mcp_server.create_mcp_server(pipeline)
+
+    result = _run(_call_tool(server, "x" * 12_001))
+
+    assert result.is_error
+    assert pipeline.calls == []
+
+
 def test_injected_pipeline_is_reused_for_multiple_calls():
     pipeline = FakePipeline()
     server = mcp_server.create_mcp_server(pipeline)

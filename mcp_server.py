@@ -6,7 +6,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from mcp.server import MCPServer
-from schemas import FreshnessReport
+from schemas import FreshnessReport, validate_answer_length
 
 if TYPE_CHECKING:
     from pipeline import FreshnessPipeline
@@ -33,6 +33,7 @@ def create_mcp_server(pipeline: FreshnessPipeline | None = None) -> MCPServer:
     @server.tool()
     def verify_answer_freshness(answer: str) -> FreshnessReport:
         """Analyze an AI-generated answer and return its structured freshness report."""
+        validate_answer_length(answer)
         logger.info("Verifying freshness for submitted answer")
         return get_pipeline().analyze(answer)
 

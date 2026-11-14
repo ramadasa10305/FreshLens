@@ -14,6 +14,7 @@ from schemas import (
     ClaimStatus,
     ClaimVerification,
     FreshnessReport,
+    validate_answer_length,
 )
 from scoring import score_freshness
 
@@ -195,6 +196,7 @@ class FreshnessPipeline:
 
     def analyze(self, answer: str) -> FreshnessReport:
         """Return a structured freshness report for an answer."""
+        validate_answer_length(answer)
         claims = self._extractor.extract(answer)
         verifications = self._verifier.verify_claims(claims)
         scored_verifications, summary = score_freshness(claims, verifications)

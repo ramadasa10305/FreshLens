@@ -6,6 +6,17 @@ from enum import Enum
 from pydantic import BaseModel, ConfigDict, Field
 
 
+MAX_ANSWER_CHARS = 12_000
+
+
+def validate_answer_length(answer: str) -> None:
+    """Reject answer strings that exceed the shared request-size limit."""
+    if isinstance(answer, str) and len(answer) > MAX_ANSWER_CHARS:
+        raise ValueError(
+            f"Answer must be {MAX_ANSWER_CHARS:,} characters or fewer."
+        )
+
+
 class ClaimStatus(str, Enum):
     """Verification status for an individual time-sensitive claim."""
 

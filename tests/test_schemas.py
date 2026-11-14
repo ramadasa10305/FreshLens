@@ -19,7 +19,20 @@ from schemas import (
     ClaimVerification,
     FreshnessReport,
     FreshnessSummary,
+    MAX_ANSWER_CHARS,
+    validate_answer_length,
 )
+
+
+def test_answer_length_validation_boundaries():
+    validate_answer_length("A normal answer.")
+    validate_answer_length("x" * MAX_ANSWER_CHARS)
+
+    with pytest.raises(ValueError, match="12,000 characters or fewer"):
+        validate_answer_length("x" * (MAX_ANSWER_CHARS + 1))
+
+    # Empty handling remains with ClaimExtractor, as before.
+    validate_answer_length("")
 
 
 # =====================================================================

@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 import streamlit as st
 
 from history_store import HistoryRecord, HistoryStore
-from schemas import ClaimStatus, FreshnessReport
+from schemas import ClaimStatus, FreshnessReport, validate_answer_length
 
 
 _STATUS_PRESENTATION = {
@@ -692,7 +692,7 @@ with st.form("freshness_check_form", border=True, enter_to_submit=False):
         key="answer_input",
         height=240,
         placeholder="Paste an answer with factual claims you want to verify.",
-        help="Long answers are supported. Claims are checked individually against retrieved evidence.",
+        help="Answers up to 12,000 characters are supported. Claims are checked individually against retrieved evidence.",
     )
     submitted = st.form_submit_button(
         "Verify freshness",
@@ -709,30 +709,35 @@ if submitted:
         st.session_state["freshness_error"] = "Paste an answer before starting a check."
     else:
         try:
-            with st.spinner("Extracting claims, retrieving evidence, and evaluating freshness..."):
-                # Import lazily so the page can render a helpful state when the
-                # project credentials or external services are not configured.
-                from pipeline import FreshnessPipeline
+            validate_answer_length(answer)
+        except ValueError as exc:
+            st.session_state["freshness_error"] = str(exc)
+        else:
+            try:
+                with st.spinner("Extracting claims, retrieving evidence, and evaluating freshness..."):
+                    # Import lazily so the page can render a helpful state when the
+                    # project credentials or external services are not configured.
+                    from pipeline import FreshnessPipeline
 
-                report = FreshnessPipeline().analyze(answer)
-            st.session_state["freshness_report"] = report
-            if history_store is not None:
-                try:
-                    history_store.save(report)
-                except Exception:
-                    # Keep the successful result visible if local persistence fails.
-                    st.session_state["history_error"] = (
-                        "Verification completed, but this result could not be "
-                        "saved to local history."
-                    )
-        except Exception:
-            # Pipeline exceptions can contain request or provider details. Keep
-            # the user-facing message useful without rendering exception text.
-            st.session_state["freshness_report"] = None
-            st.session_state["freshness_error"] = (
-                "Freshness verification could not be completed. Check that the "
-                "configured services are available, then try again."
-            )
+                    report = FreshnessPipeline().analyze(answer)
+                st.session_state["freshness_report"] = report
+                if history_store is not None:
+                    try:
+                        history_store.save(report)
+                    except Exception:
+                        # Keep the successful result visible if local persistence fails.
+                        st.session_state["history_error"] = (
+                            "Verification completed, but this result could not be "
+                            "saved to local history."
+                        )
+            except Exception:
+                # Pipeline exceptions can contain request or provider details. Keep
+                # the user-facing message useful without rendering exception text.
+                st.session_state["freshness_report"] = None
+                st.session_state["freshness_error"] = (
+                    "Freshness verification could not be completed. Check that the "
+                    "configured services are available, then try again."
+                )
 
 if st.session_state["freshness_error"]:
     st.error(st.session_state["freshness_error"])

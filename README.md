@@ -97,7 +97,7 @@ Use real values only in the local `.env` file. The configuration loader reads `.
 Start the Streamlit application from the repository root:
 
 ```powershell
-.\.venv\Scripts\python.exe -m streamlit run app.py
+.\.venv\Scripts\python.exe -m streamlit run app.py --server.address 127.0.0.1
 ```
 
 Streamlit prints the local URL in the terminal. The default port may change if it is already in use.

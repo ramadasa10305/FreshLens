@@ -193,6 +193,22 @@ def test_pipeline_no_claims_returns_empty_scoring_summary():
     assert report.summary.overall_freshness_score is None
 
 
+def test_pipeline_rejects_oversized_and_empty_answers_before_external_calls():
+    bifrost = FakeBifrost()
+    tavily = FakeTavily()
+    pipeline = FreshnessPipeline(bifrost, tavily)
+
+    with pytest.raises(ValueError, match="12,000 characters or fewer"):
+        pipeline.analyze("x" * 12_001)
+    assert bifrost.calls == []
+    assert tavily.queries == []
+
+    with pytest.raises(ValueError, match="non-empty string"):
+        pipeline.analyze(" \t\n")
+    assert bifrost.calls == []
+    assert tavily.queries == []
+
+
 def test_verification_does_not_mutate_claim_or_tavily_result():
     claim = _claim()
     result = _result()
